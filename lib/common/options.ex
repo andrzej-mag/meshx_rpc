@@ -36,7 +36,7 @@ defmodule MeshxRpc.Common.Options do
         type: {:or, [:mfa, :atom]},
         default: nil,
         doc: """
-        block checksum function `{module, function, argument}`. 2-arity function: 1st argument - binary data to calculate checksum, 2nd argument - as set in option `argument`. Example checksum implementation is `MeshxRpc.Protocol.Default.checksum/2`, using `:erlang.crc32/1`. To use this function set: `cks_mfa: {MeshxRpc.Protocol.Default, :checksum, []}`. If option is left undefined checksums are not calculated.
+        block checksum function `{module, function, argument}`. 2-arity function: 1st argument - binary data to calculate checksum, 2nd argument - as set in option `argument`. Function result type should be `binary()`. Example checksum implementation is `MeshxRpc.Protocol.Default.checksum/2`, using `:erlang.crc32/1`. To use this function set: `cks_mfa: {MeshxRpc.Protocol.Default, :checksum, []}`. If option is left undefined checksums are not calculated.
         """
       ],
       conn_ref_mfa: [
