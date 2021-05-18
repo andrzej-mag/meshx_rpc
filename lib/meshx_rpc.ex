@@ -115,10 +115,11 @@ defmodule MeshxRpc do
   size: [recv: "31B", send: "31B"]
   blocks: [recv: 1, send: 1]
   ```
-  `t_req` is total request time and request steps times in milliseconds.
-  `t_idle` is worker idle time in milliseconds.
+  `t_req` is total request time followed by [individual request steps times], milliseconds.
 
-  Function can be used as helper during testing and development.
+  `t_idle` is worker idle time, milliseconds.
+
+  Function is created as helper for use during development phase, most probably should not be used in production.
   """
   def attach_telemetry(telemetry_prefix, id \\ nil), do: MeshxRpc.Common.Telemetry.attach(telemetry_prefix, id)
 end

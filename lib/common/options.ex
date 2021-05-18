@@ -8,10 +8,10 @@ defmodule MeshxRpc.Common.Options do
         doc: """
         Pool options for RPC client and server pools.
         Server pool is build using [`ranch` socket acceptor pool](https://hex.pm/packages/ranch). `pool_opts` correspond in this case to `ranch` [transport options](https://ninenines.eu/docs/en/ranch/2.0/manual/ranch/).
-        Client pool is build using [`poolboy`](https://hex.pm/packages/poolboy), `pool_opts` correspond here directly to [`poolboy` options](https://github.com/devinus/poolboy#options). Users usually should not set any `pool_opts` for server pools. Options that can be set for client pools:
-            * size: maximum pool size, default 10,
-            * max_overflow: maximum number of workers created if pool is empty,
-            * strategy: lifo or fifo, determines whether checked in workers should be placed first or last in the line of available workers. So, lifo operates like a traditional stack; fifo like a queue. Default is lifo.
+        Client pool is build using [`poolboy`](https://hex.pm/packages/poolboy), `pool_opts` correspond here directly to [`poolboy` options](https://github.com/devinus/poolboy#options). Users usually should not set any `pool_opts` for server pools. Options that can be set for RPC client pools:
+            * `:size` - maximum pool size, default 10,
+            * `:max_overflow` - maximum number of workers created if pool is empty,
+            * `:strategy` - `:lifo` or `:fifo`, determines whether checked in workers should be placed first or last in the line of available workers. So, `:lifo` operates like a traditional stack; `:fifo` like a queue. Default is `:lifo`.
                 *
         """
       ],
@@ -29,14 +29,14 @@ defmodule MeshxRpc.Common.Options do
         type: {:custom, __MODULE__, :int_range, [200..268_435_456]},
         default: 16384,
         doc: """
-        `MeshxRpc` after serializing request function arguments into binary, splits that binary into smaller blocks send over the wire. Option states maximum block byte size. Must be between 200 bytes and 256 MB (`200..268_435_456`).
+        user request function arguments are first serialized into binary. Binary is then split into smaller blocks send over the wire. Option defines maximum send block byte size. Must be between 200 bytes and 256 MB (`200..268_435_456`).
         """
       ],
       cks_mfa: [
         type: {:or, [:mfa, :atom]},
         default: nil,
         doc: """
-        block checksum function `{module, function, argument}`. 2-arity function with binary data to calculate checksum as first argument, second as set in option `argument`. As ready to use example `:erlang.crc32` is wrapped in `MeshxRpc.Protocol.Default.checksum/2`. To use this function set option to: `{MeshxRpc.Protocol.Default, :checksum, []}`. If option is left undefined checksums are not calculated.
+        block checksum function `{module, function, argument}`. 2-arity function: 1st argument - binary data to calculate checksum, 2nd argument - as set in option `argument`. Example checksum implementation is `MeshxRpc.Protocol.Default.checksum/2`, using `:erlang.crc32/1`. To use this function set: `cks_mfa: {MeshxRpc.Protocol.Default, :checksum, []}`. If option is left undefined checksums are not calculated.
         """
       ],
       conn_ref_mfa: [
