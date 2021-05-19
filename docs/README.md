@@ -27,14 +27,17 @@ end
 ```
 
 ## Usage
-Same `mix` project is used to implement both RPC server and RPC client to simplify usage examples.
+Same `mix` project will be used to implement both RPC server and RPC client to simplify usage examples.
 Server node is distinguished from client node by using custom `erl` command line flag `-rpc_server?` when starting nodes with `iex`.
 
+### Example 1. Shared Unix Domain Socket.
 Implement RPC server and client modules:
 ```elixir
 # lib/server.ex
 defmodule Example1.Server do
-  use MeshxRpc.Server
+  use MeshxRpc.Server,
+    address: {:uds, "/tmp/meshx.sock"},
+    telemetry_prefix: [:example1, __MODULE__]
 
   def echo(args), do: args
   def ping(_args), do: :pong
@@ -42,33 +45,34 @@ end
 
 # lib/client.ex
 defmodule Example1.Client do
-  use MeshxRpc.Client
-  # option suggested for testing and development: to reduce emitted telemetry events limit pool workers number
-  # pool_opts: [size: 1, max_overflow: 0]
+  use MeshxRpc.Client,
+    address: {:uds, "/tmp/meshx.sock"},
+    telemetry_prefix: [:example1, __MODULE__],
+    pool_opts: [size: 1, max_overflow: 0]
+
   def echo(args), do: call(:echo, args)
 end
 ```
+Both client and server connect to the same UDS socket at `"/tmp/meshx.sock"`.
+For RPC client number of pool workers is limited to one, to reduce amount of telemetry events logged to terminal.
 
-Next step involves building communication channel between server and client:
-  * **Example 1**: server and client are started on same host and both connect to the same UDS socket,
-  * **Example 2**: service mesh data plane is used for RPC client-server communication and `MeshxConsul` is used as service mesh adapter.
-
-### Example 1. Shared Unix Domain Socket.
-
+Client and server can be started using application supervision tree:
 ```elixir
 # lib/example1/application.ex
 defmodule Example1.Application do
-  @moduledoc false
   use Application
-
-  @address {:uds, "/tmp/meshx.sock"}
 
   @impl true
   def start(_type, _args) do
-    mod = if rpc_server?(), do: Example1.Server, else: Example1.Client
-    telemetry_prefix = [:example1, mod]
-    MeshxRpc.attach_telemetry(telemetry_prefix)
-    children = [mod.child_spec(address: @address, telemetry_prefix: telemetry_prefix)]
+    children =
+      if rpc_server?() do
+        MeshxRpc.attach_telemetry([:example1, Example1.Server])
+        [Example1.Server.child_spec()]
+      else
+        MeshxRpc.attach_telemetry([:example1, Example1.Client])
+        [Example1.Client.child_spec()]
+      end
+
     Supervisor.start_link(children, strategy: :one_for_one, name: Example1.Supervisor)
   end
 
@@ -81,7 +85,7 @@ defmodule Example1.Application do
 end
 ```
 
-Launch two terminals, start RPC server node in first one:
+Launch two terminals, start RPC server node in first terminal:
 ```sh
 iex --erl "-start_epmd false" --erl "-rpc_server? true" -S mix
 ```
@@ -100,6 +104,7 @@ First line says that successful handshake (`:hsk`) was executed by `[:example1, 
 
 Execute RPC requests in client terminal:
 ```elixir
+# telemetry events removed
 iex(1)> Example1.Client.call(:ping)
 :pong
 iex(2)> Example1.Client.echo("hello world")
@@ -107,7 +112,8 @@ iex(2)> Example1.Client.echo("hello world")
 iex(3)> Example1.Client.cast(:echo, "hello world")
 :ok
 ```
-When using OTP [`:erpc`](https://erlang.org/doc/man/erpc.html) module it is possible to execute arbitrary function call on remote node, for example: `:erpc.call(:other_node, File, :rm, ["/1/etc/*.remove_all"])`. As mentioned earlier request execution scope in `MeshxRpc` is limited to single server module, here `Example1.Server` exposes only `ping/1` and `echo/1`. Requesting remote execution of not implemented (or not allowed) function will result in error:
+
+When using OTP [`:erpc`](https://erlang.org/doc/man/erpc.html) module it is possible to execute arbitrary function call on remote node, for example: `:erpc.call(:other_node, File, :rm, ["/1/etc/*.remove_all"])`. As mentioned earlier request execution scope in `MeshxRpc` is limited to single server module, here `Example1.Server` exposes only `ping/1` and `echo/1` functions. Requesting remote execution of not implemented (or not allowed) function will result in error:
 ```elixir
 iex(3)> Example1.Client.call(:rm, ["/1/etc/*.remove_all"])
 {:error_remote,
@@ -123,8 +129,30 @@ Possible extension to this example could be: run RPC server and client nodes on 
 ### Example 2. Service mesh using `MeshxConsul`.
 Please check `MeshxConsul` package documentation for additional requirements and necessary configuration steps when using Consul service mesh adapter.
 
-Starting user service providers and upstream clients in service mesh requires interaction with Consul used as external service mesh application. Running external API calls that can block, during supervision tree initialization is considered as bad practice.
-To start mesh service provider and mesh upstream client asynchronously, additional `DynamicSupervisor` is created:
+Starting user service providers and upstream clients connected to service mesh requires interaction with Consul used as external service mesh application. Running external API calls that can block, during supervision tree initialization is considered as bad practice. To start mesh service provider and mesh upstream client asynchronously, additional `DynamicSupervisor` will be created.
+
+First implement RPC client and server:
+```elixir
+# lib/server.ex
+defmodule Example2.Server do
+  use MeshxRpc.Server,
+    telemetry_prefix: [:example2, __MODULE__]
+
+  def echo(args), do: args
+  def ping(_args), do: :pong
+end
+
+# lib/client.ex
+defmodule Example2.Client do
+  use MeshxRpc.Client,
+    telemetry_prefix: [:example2, __MODULE__],
+    pool_opts: [size: 1, max_overflow: 0]
+
+  def echo(args), do: call(:echo, args)
+end
+```
+
+`Example2.MeshSupervisor` is a dynamic supervisor used to manage mesh services, started using application supervisor:
 ```elixir
 # lib/example2/application.ex
 defmodule Example2.Application do
@@ -140,13 +168,11 @@ defmodule Example2.Application do
 end
 ```
 
-`Example2.MeshSupervisor` used to asynchronously start both RPC server and client depending on `--erl "-rpc_server? true/false"` command line flag:
+Dynamic supervisor `Example2.MeshSupervisor` used to asynchronously start both RPC server and client depending on `--erl "-rpc_server? true/false"` command line argument:
 ```elixir
 # lib/mesh_supervisor.ex
 defmodule Example2.MeshSupervisor do
   use DynamicSupervisor
-
-  @service_name "service-1"
 
   def start_link(init_arg),
     do: DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
@@ -158,22 +184,18 @@ defmodule Example2.MeshSupervisor do
   end
 
   def start_mesh() do
-    {mod, address} =
+    child =
       if rpc_server?() do
-        {:ok, _id, address} = MeshxConsul.start(@service_name)
-        {Example2.Server, address}
+        MeshxRpc.attach_telemetry([:example2, Example2.Server])
+        {:ok, _id, address} = MeshxConsul.start("service-1")
+        Example2.Server.child_spec(address: address)
       else
-        {:ok, [{:ok, address}]} = MeshxConsul.connect([@service_name])
-        {Example2.Client, address}
+        MeshxRpc.attach_telemetry([:example2, Example2.Client])
+        {:ok, [{:ok, address}]} = MeshxConsul.connect(["service-1"])
+        Example2.Client.child_spec(address: address)
       end
 
-    telemetry_prefix = [:example2, mod]
-    MeshxRpc.attach_telemetry(telemetry_prefix)
-
-    DynamicSupervisor.start_child(
-      __MODULE__,
-      mod.child_spec(address: address, telemetry_prefix: telemetry_prefix)
-    )
+    DynamicSupervisor.start_child(__MODULE__, child)
   end
 
   defp rpc_server?() do
@@ -184,21 +206,11 @@ defmodule Example2.MeshSupervisor do
   end
 end
 ```
-Commands to start server and client nodes are same as in Example 1.
+Commands to start server and client nodes are same as in [Example 1](#module-example-1-shared-unix-domain-socket).
 
-Following events take place when RPC server node is started:
-  * mesh service endpoint `address` is prepared by `MeshxConsul.start("service-1")`,
-  * Logger is attached to telemetry events with `MeshxRpc.attach_telemetry(telemetry_prefix)`,
-  * `DynamicSupervisor` starts child specified with `Example2.Server.child_spec/1`,
-  * started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be managed using Consul service mesh control plane.
+When RPC server node is started mesh service endpoint `address` is prepared by `MeshxConsul.start("service-1")`. Special "node service" is registered with Consul, default service name would be in this case `"service-1"`. Next `DynamicSupervisor` starts child specified with `Example2.Server.child_spec/1`. Started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be managed using Consul service mesh control plane.
 
-Events taking place when RPC client node is started:
-  * mesh upstream endpoint `address` is prepared by `MeshxConsul.connect(["service-1"])`:
-    * special `upstream-h11` service with sidecar proxy is started,
-    * upstream `service-1` is added to sidecar proxy `upstream-h11`,
-  * Logger is attached to telemetry events with `MeshxRpc.attach_telemetry(telemetry_prefix)`,
-  * `DynamicSupervisor` starts child specified with `Example2.Client.child_spec/1`,
-  * started user (RPC) client is connected to mesh upstream endpoint `address`, hence it acts as user mesh upstream client bound with service mesh data plane.
+When RPC client node is started mesh upstream endpoint `address` is prepared by `MeshxConsul.connect("service-1")`. Special "proxy service" is registered with Consul, default service name is prefix `"upstream-"` concatenated with host name. In this example it is `"upstream-h11"`. Next `DynamicSupervisor` starts child specified with `Example2.Client.child_spec/1`. Started child worker is a user defined (RPC) client attached to mesh upstream endpoint `address`, hence it becomes user mesh upstream client attached to service mesh data plane.
 
 Consul UI screenshot showing connection between `upstream-h11` proxy service and `service-1`:
 ![image](assets/topology.png)
