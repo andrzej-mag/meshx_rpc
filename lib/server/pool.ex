@@ -1,10 +1,4 @@
 defmodule MeshxRpc.Server.Pool do
-  @moduledoc """
-  RPC server pool.
-
-  todo: Documentation will be provided at a later date.
-  """
-
   @behaviour :ranch_protocol
   alias MeshxRpc.App.T
   alias MeshxRpc.Common.{Options, Structs.Data, Structs.Svc}
@@ -12,12 +6,50 @@ defmodule MeshxRpc.Server.Pool do
   @opts [
     timeout_execute: [
       type: :timeout,
-      default: :infinity
+      default: :infinity,
+      doc: """
+      Request function execution timeout. If timeout is exceeded request function is killed and remote RPC client call will error with: `{:error_remote, :killed}`.
+      """
     ]
   ]
   @worker_mod MeshxRpc.Server.Worker
   @transport :ranch_tcp
 
+  @moduledoc """
+  RPC server workers pool.
+
+  ## Configuration
+  RPC server pool is configured when starting child defined by `child_spec/2`. Configuration options common to both RPC client and server are described in `MeshxRpc` **Common configuration** section.
+
+  `MeshxRpc.Server.Pool.child_spec/2` configuration options:
+  #{NimbleOptions.docs(@opts)}
+  """
+
+  @doc """
+  Returns a specification to start a RPC server workers pool under a supervisor.
+
+  `id` is a pool id which should be a name of a module implementing user RPC functions.
+
+  `opts` are options described in **Configuration** section above and in `MeshxRpc` **Common configuration** section.
+  ```elixir
+  iex(1)> MeshxRpc.Server.Pool.child_spec(Example1.Server, address: {:uds, "/tmp/meshx.sock"})
+  %{
+    id: {:ranch_embedded_sup, Example1.Server},
+    start: {:ranch_embedded_sup, :start_link,
+     [
+       Example1.Server,
+       :ranch_tcp,
+       %{socket_opts: [ip: {:local, "/tmp/meshx.sock"}, port: 0]},
+       MeshxRpc.Server.Pool,
+       [
+         ...
+       ]
+     ]},
+    type: :supervisor
+  }
+  ```
+  """
+  @spec child_spec(id :: atom(), opts :: Keyword.t()) :: Supervisor.child_spec()
   def child_spec(id, opts \\ []) do
     opts = NimbleOptions.validate!(opts, @opts ++ Options.common())
     node_ref_mfa = Keyword.fetch!(opts, :node_ref_mfa)

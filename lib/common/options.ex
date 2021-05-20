@@ -29,14 +29,14 @@ defmodule MeshxRpc.Common.Options do
         type: {:custom, __MODULE__, :int_range, [200..268_435_456]},
         default: 16384,
         doc: """
-        user request function arguments are first serialized into binary. Binary is then split into smaller blocks send over the wire. Option defines maximum send block byte size. Must be between 200 bytes and 256 MB (`200..268_435_456`).
+        user request function arguments are first serialized into binary using function specified with `:serialize_mfa` option. Binary is then split into smaller blocks send over the wire. Option defines maximum send block byte size. Must be between 200 bytes and 256 MB (`200..268_435_456`).
         """
       ],
       cks_mfa: [
         type: {:or, [:mfa, :atom]},
         default: nil,
         doc: """
-        block checksum function `{module, function, argument}`. 2-arity function: 1st argument - binary data to calculate checksum, 2nd argument - as set in option `argument`. Function result type should be `binary()`. Example checksum implementation is `MeshxRpc.Protocol.Default.checksum/2`, using `:erlang.crc32/1`. To use this function set: `cks_mfa: {MeshxRpc.Protocol.Default, :checksum, []}`. If option is left undefined checksums are not calculated.
+        block checksum function `{module, function, argument}`. 2-arity function accepting: 1st argument - binary data to calculate checksum, 2nd argument - as set in option `argument`. Function result should be calculated checksum of `binary()` type. Example checksum implementation is `MeshxRpc.Protocol.Default.checksum/2`, using `:erlang.crc32/1`. To use this function set: `[cks_mfa: {MeshxRpc.Protocol.Default, :checksum, []}]`. If option is left undefined checksums are not calculated.
         """
       ],
       conn_ref_mfa: [
@@ -78,7 +78,7 @@ defmodule MeshxRpc.Common.Options do
         type: :mfa,
         default: {MeshxRpc.Protocol.Default, :serialize, []},
         doc: """
-        `{module, function, argument}` function used to serialize request argument, 2-arity. First argument is erlang term requiring serialization, second is option `argument`. Function should return if successful `{:ok, serialized_binary, serialization_flag}`. `serialization_flag` should be one byte integer (`0..255`). It states how data should be de-serialized and will be passed as third argument to function specified in `:deserialize_mfa`. In case of error function should return `{:error, reason}`.
+        `{module, function, argument}` function used to serialize user request function argument(s), 2-arity. First argument is erlang term that requires serialization, second is option `argument`. Function should return if successful `{:ok, serialized_binary, serialization_flag}`. `serialization_flag` should be one byte integer (`0..255`). It states how data should be de-serialized and will be passed as third argument to function specified in `:deserialize_mfa`. In case of error function should return `{:error, reason}`.
         """
       ],
       shared_key: [
@@ -92,7 +92,7 @@ defmodule MeshxRpc.Common.Options do
         type: :keyword_list,
         default: [],
         doc: """
-        Connection socket options. Users should not use this setting usually. Check `:inet.setopts/2` for available options.
+        Connection socket options. Check `:inet.setopts/2` for available settings.
         """
       ],
       svc_ref_mfa: [
@@ -104,7 +104,7 @@ defmodule MeshxRpc.Common.Options do
       telemetry_prefix: [
         type: {:list, :atom},
         doc: """
-        Specifies prefix used when executing telemetry events, e.g. `[:my_app, MyApp.Rpc.Server1]`.
+        Specifies prefix used when executing telemetry events, e.g. `[:my_app, MyApp.Rpc.Server1]`. If not defined package name and service module will be used: `[:meshx_rpc, MyApp.Rpc.Server1]`.
         """
       ],
       timeout_hsk: [

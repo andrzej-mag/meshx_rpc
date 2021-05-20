@@ -3,7 +3,7 @@
 <!-- MDOC !-->
 RPC client and server.
 
-`MeshxRpc` can be considered as an alternative to Erlang OTP [`:erpc`](https://erlang.org/doc/man/erpc.html) or [`:rpc`](https://erlang.org/doc/man/rpc.html) modules. Native OTP `:erpc` module requires nodes to be connected with Erlang distribution protocol. Additionally `:erpc` allows execution of arbitrary code on remote node, which might be not acceptable from security point of view in many environments. `MeshxRpc` restricts incoming request function executability to single module associated with given RPC server. This way user has full control over RPC server code exposed to remote RPC clients. Furthermore `MeshxRpc` is using custom binary communication protocol, hence it doesn't depend on Erlang distribution protocol.
+`MeshxRpc` can be considered as an alternative to Erlang OTP [`:erpc`](https://erlang.org/doc/man/erpc.html) or [`:rpc`](https://erlang.org/doc/man/rpc.html) modules. Native OTP `:erpc` module requires nodes to be connected with Erlang distribution protocol. Additionally `:erpc` allows execution of arbitrary code on remote node, which might be not acceptable from security point of view in many environments. `MeshxRpc` restricts incoming request function executability scope to single module associated with given RPC server. This way user has full control over RPC server code exposed to remote RPC clients. Furthermore `MeshxRpc` is using custom binary communication protocol, hence it doesn't depend on Erlang distribution protocol.
 
 `MeshxRpc` features:
   * connection pooling,

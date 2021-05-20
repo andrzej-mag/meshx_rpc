@@ -5,3 +5,6 @@
   * ...
 
 todo: Documentation will be provided at a later date.
+
+Screenshot showing protocol messages overview:
+![image](assets/protocol.png)

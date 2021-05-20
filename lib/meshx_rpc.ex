@@ -2,7 +2,6 @@ defmodule MeshxRpc do
   @readme File.read!("docs/README.md") |> String.split("<!-- MDOC !-->") |> Enum.fetch!(1)
 
   @moduledoc """
-
   #{@readme}
 
   ## Common configuration
