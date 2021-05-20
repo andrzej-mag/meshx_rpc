@@ -13,16 +13,25 @@ RPC client and server.
   * reach per request telemetry metrics,
   * request integrity protection with sequence numbers and node/connection references,
   * primitive access control with optional pre-shared keys,
-  * load balancing and high availability provided by service mesh data plane.
+  * load balancing and high availability provided by service mesh data plane,
+  * ability to run multiple RPC servers and/or clients on the same node.
 
-`MeshxRpc` designed to work primarily as mesh service doesn't offer data encryption, authorization or authentication mechanisms as those are natively provided by service mesh environment.
+`MeshxRpc` is designed to work primarily as mesh service and doesn't offer data encryption, authorization or authentication mechanisms as those are natively provided by service mesh environment.
 
 ## Installation
-Add `:meshx_rpc` to application dependencies:
+Add `:meshx_rpc` and optionally `:meshx_consul`, `:ranch` and `:poolboy` to application dependencies:
 ```elixir
 # mix.exs
 def deps do
-  [{:meshx_rpc, "~> 0.1.0-dev", github: "andrzej-mag/meshx_rpc"}]
+  [
+    {:meshx_rpc, "~> 0.1.0-dev", github: "andrzej-mag/meshx_rpc"},
+    # if using :meshx_consul service mesh adapter add:
+    {:meshx_consul, "~> 0.1.0-dev", github: "andrzej-mag/meshx_consul"},
+    # if running RPC client(s) add:
+    {:poolboy, "~> 1.5"},
+    # if running RPC server(s) add:
+    {:ranch, "~> 2.0"}
+  ]
 end
 ```
 
