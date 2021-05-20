@@ -96,7 +96,10 @@ defmodule MeshxRpc.Client.Pool do
     conn_ref_mfa = Keyword.fetch!(opts, :conn_ref_mfa)
     gen_statem_opts = Keyword.fetch!(opts, :gen_statem_opts)
 
-    :poolboy.child_spec(id, pool_opts, [{data, node_ref_mfa, svc_ref_mfa, conn_ref_mfa}, gen_statem_opts])
+    {id, start, restart, shutdown, type, modules} =
+      :poolboy.child_spec(id, pool_opts, [{data, node_ref_mfa, svc_ref_mfa, conn_ref_mfa}, gen_statem_opts])
+
+    %{id: id, start: start, restart: restart, shutdown: shutdown, type: type, modules: modules}
   end
 
   @doc """
