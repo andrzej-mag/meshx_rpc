@@ -2,6 +2,8 @@ defmodule MeshxRpc.Protocol.Block.Decode do
   @moduledoc false
   alias MeshxRpc.Common.Structs.Data
 
+  @error_prefix_remote :error_rpc_remote
+
   @time_unit :microsecond
 
   @req_cast_1 10
@@ -136,7 +138,7 @@ defmodule MeshxRpc.Protocol.Block.Decode do
 
       case apply(m, f, [err, o, ser_flag]) do
         {:ok, args} ->
-          {:error_remote, args}
+          {@error_prefix_remote, args}
 
         {:error, err} ->
           {:error, err}

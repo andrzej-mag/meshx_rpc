@@ -2,9 +2,12 @@ defmodule MeshxRpc.Client.Worker do
   @moduledoc false
   @behaviour :gen_statem
   @behaviour :poolboy_worker
+  alias MeshxRpc.App.T
   alias MeshxRpc.Common.{Telemetry, Structs.Data, Structs.Svc}
   alias MeshxRpc.Protocol.{Hsk, Block.Decode, Block.Encode}
 
+  @error_prefix :error_rpc
+  @error_prefix_remote :error_rpc_remote
   @reconnect_result :ok_reconnect
 
   @impl :poolboy_worker
@@ -42,14 +45,16 @@ defmodule MeshxRpc.Client.Worker do
         {:next_state, :hsk, data, [{:next_event, :internal, :start_hsk}]}
 
       {:error, error} ->
-        data = %Data{data | result: {:error, error}}
+        data = %Data{data | result: {@error_prefix, error}}
         Telemetry.execute(data)
-        {:keep_state_and_data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_proxy_fail), []}]}
+        {:keep_state_and_data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_proxy_fail), []}]}
     end
   end
 
   def closed({:timeout, :reconnect}, [], _data), do: {:keep_state_and_data, [{:next_event, :internal, :connect}]}
-  def closed({:call, from}, {:request, _request}, _data), do: {:keep_state_and_data, [{:reply, from, {:error, :closed}}]}
+
+  def closed({:call, from}, {:request, _request}, _data),
+    do: {:keep_state_and_data, [{:reply, from, {@error_prefix, :closed}}]}
 
   # ________hsk
   def hsk(:enter, :closed, %Data{} = data),
@@ -64,8 +69,8 @@ defmodule MeshxRpc.Client.Worker do
         {:keep_state, Data.inc_size(data, byte_size(payload), :send) |> Data.inc_blk(:send)}
 
       {:error, error} ->
-        data = %Data{data | result: {:error, error}} |> Data.set_time(:hsk)
-        {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_hsk_fail), []}]}
+        data = %Data{data | result: {@error_prefix, error}} |> Data.set_time(:hsk)
+        {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_hsk_fail), []}]}
     end
   end
 
@@ -80,30 +85,30 @@ defmodule MeshxRpc.Client.Worker do
         {:next_state, :idle, data}
 
       {:error, error, data} ->
-        data = %Data{data | result: {:error, error}} |> Data.set_time(:hsk)
-        {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_hsk_fail), []}]}
+        data = %Data{data | result: {@error_prefix, error}} |> Data.set_time(:hsk)
+        {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_hsk_fail), []}]}
 
-      {:error_remote, error} ->
-        data = %Data{data | result: {:error_remote, error}} |> Data.set_time(:hsk)
-        {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_hsk_fail), []}]}
+      {@error_prefix_remote, error} ->
+        data = %Data{data | result: {@error_prefix_remote, error}} |> Data.set_time(:hsk)
+        {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_hsk_fail), []}]}
     end
   end
 
-  def hsk({:call, from}, {:request, _request}, _data), do: {:keep_state_and_data, [{:reply, from, {:error, :closed}}]}
+  def hsk({:call, from}, {:request, _request}, _data), do: {:keep_state_and_data, [{:reply, from, {@error_prefix, :closed}}]}
 
   def hsk(:state_timeout, :reconnect, %Data{} = data) do
-    data = %Data{data | result: {:error, :timeout_hsk}} |> Data.set_time(:hsk)
+    data = %Data{data | result: {@error_prefix, :timeout_hsk}} |> Data.set_time(:hsk)
     {:next_state, :closed, data, [{:next_event, :internal, :connect}]}
   end
 
   def hsk(:info, {:tcp_closed, _socket}, %Data{} = data) do
-    data = %Data{data | result: {:error, :closed}} |> Data.set_time(:hsk)
-    {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_hsk_fail), []}]}
+    data = %Data{data | result: {@error_prefix, :tcp_closed}} |> Data.set_time(:hsk)
+    {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_hsk_fail), []}]}
   end
 
   def hsk(:info, {:tcp_error, _socket, reason}, %Data{} = data) do
-    data = %Data{data | result: {:error, reason}} |> Data.set_time(:hsk)
-    {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_hsk_fail), []}]}
+    data = %Data{data | result: {@error_prefix, reason}} |> Data.set_time(:hsk)
+    {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_hsk_fail), []}]}
   end
 
   # ________idle
@@ -111,14 +116,14 @@ defmodule MeshxRpc.Client.Worker do
     :inet.setopts(data.socket, packet: 4)
 
     {:keep_state, %Data{data | state: :idle} |> Data.reset_request() |> Data.start_time(:idle),
-     [{:state_timeout, Data.rand_retry(data.idle_reconnect), :reconnect}]}
+     [{:state_timeout, T.rand_retry(data.idle_reconnect), :reconnect}]}
   end
 
   def idle(:enter, :reply, %Data{} = data) do
     Telemetry.execute(data)
 
     {:keep_state, Data.reset_request(data) |> Data.start_time(:idle),
-     [{:state_timeout, Data.rand_retry(data.idle_reconnect), :reconnect}]}
+     [{:state_timeout, T.rand_retry(data.idle_reconnect), :reconnect}]}
   end
 
   def idle({:call, from}, {:request, {fun_req, fun_name, args}}, %Data{} = data) do
@@ -131,7 +136,7 @@ defmodule MeshxRpc.Client.Worker do
         {:next_state, :send, data, [{:next_event, :internal, :start}]}
 
       {:error, e} ->
-        {:next_state, :closed, %Data{data | result: {:error, e}}, [{:next_event, :internal, :connect}]}
+        {:next_state, :closed, %Data{data | result: {@error_prefix, e}}, [{:next_event, :internal, :connect}]}
     end
   end
 
@@ -141,13 +146,13 @@ defmodule MeshxRpc.Client.Worker do
   end
 
   def idle(:info, {:tcp_closed, _socket}, %Data{} = data) do
-    data = %Data{data | result: {:error, :tcp_closed}} |> Data.set_time(:idle)
-    {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_error), []}]}
+    data = %Data{data | result: {@error_prefix, :tcp_closed}} |> Data.set_time(:idle)
+    {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_idle_error), []}]}
   end
 
   def idle(:info, {:tcp_error, _socket, reason}, %Data{} = data) do
-    data = %Data{data | result: {:error, reason}} |> Data.set_time(:idle)
-    {:next_state, :closed, data, [{{:timeout, :reconnect}, Data.rand_retry(data.retry_error), []}]}
+    data = %Data{data | result: {@error_prefix, reason}} |> Data.set_time(:idle)
+    {:next_state, :closed, data, [{{:timeout, :reconnect}, T.rand_retry(data.retry_idle_error), []}]}
   end
 
   # ________send
@@ -206,7 +211,7 @@ defmodule MeshxRpc.Client.Worker do
         end
 
       {:error, reason} ->
-        data = %Data{data | result: {:error, reason}} |> Data.set_time(:send)
+        data = %Data{data | result: {@error_prefix, reason}} |> Data.set_time(:send)
         {:next_state, :closed, data, [{:next_event, :internal, :connect}]}
     end
   end
@@ -215,14 +220,14 @@ defmodule MeshxRpc.Client.Worker do
     if length(data.dta) == len and from == data.workers do
       {:keep_state, %Data{data | cks_bin: cks}, [{:next_event, :internal, :send}]}
     else
-      data = %Data{data | result: {:error, :invalid_state}} |> Data.set_time(:send)
+      data = %Data{data | result: {@error_prefix, :invalid_state}} |> Data.set_time(:send)
       {:next_state, :closed, data, [{:next_event, :internal, :connect}]}
     end
   end
 
   def send(:state_timeout, :timeout_cks, %Data{} = data),
     do:
-      {:next_state, :reply, %Data{data | result: {:error, :timeout_cks}} |> Data.set_time(:send),
+      {:next_state, :reply, %Data{data | result: {@error_prefix, :timeout_cks}} |> Data.set_time(:send),
        [{:next_event, :internal, :reply_close}]}
 
   def send(:info, {:tcp, _socket, payload}, %Data{} = data) do
@@ -230,25 +235,25 @@ defmodule MeshxRpc.Client.Worker do
     data = Data.inc_size(data, byte_size(payload), :recv) |> Data.inc_blk(:recv) |> Data.set_time(:send)
 
     case Decode.decode(payload, data) do
-      {:error_remote, e} ->
-        {:next_state, :reply, %Data{data | result: {:error_remote, e}}, [{:next_event, :internal, :reply_close}]}
+      {@error_prefix_remote, e} ->
+        {:next_state, :reply, %Data{data | result: {@error_prefix_remote, e}}, [{:next_event, :internal, :reply_close}]}
 
       {:error, e} ->
-        {:next_state, :reply, %Data{data | result: {:error, e}}, [{:next_event, :internal, :reply_close}]}
+        {:next_state, :reply, %Data{data | result: {@error_prefix, e}}, [{:next_event, :internal, :reply_close}]}
 
       _ ->
-        {:next_state, :reply, %Data{data | result: {:error, :invalid_state}}, [{:next_event, :internal, :reply_close}]}
+        {:next_state, :reply, %Data{data | result: {@error_prefix, :invalid_state}}, [{:next_event, :internal, :reply_close}]}
     end
   end
 
   def send(:info, {:tcp_closed, _socket}, %Data{} = data),
     do:
-      {:next_state, :reply, %Data{data | result: {:error, :tcp_closed}} |> Data.set_time(:send),
+      {:next_state, :reply, %Data{data | result: {@error_prefix, :tcp_closed}} |> Data.set_time(:send),
        [{:next_event, :internal, :reply_close}]}
 
   def send(:info, {:tcp_error, _socket, reason}, %Data{} = data),
     do:
-      {:next_state, :reply, %Data{data | result: {:error, reason}} |> Data.set_time(:send),
+      {:next_state, :reply, %Data{data | result: {@error_prefix, reason}} |> Data.set_time(:send),
        [{:next_event, :internal, :reply_close}]}
 
   # ________recv
@@ -266,12 +271,12 @@ defmodule MeshxRpc.Client.Worker do
       :ok_ack ->
         {:next_state, :reply, %Data{data | result: :ok} |> Data.set_time(:recv), [{:next_event, :internal, :reply}]}
 
-      {:error_remote, error} ->
-        {:next_state, :reply, %Data{data | result: {:error_remote, error}} |> Data.set_time(:recv),
+      {@error_prefix_remote, error} ->
+        {:next_state, :reply, %Data{data | result: {@error_prefix_remote, error}} |> Data.set_time(:recv),
          [{:next_event, :internal, :reply_close}]}
 
       {:error, err} ->
-        {:next_state, :reply, %Data{data | result: {:error, err}} |> Data.set_time(:recv),
+        {:next_state, :reply, %Data{data | result: {@error_prefix, err}} |> Data.set_time(:recv),
          [{:next_event, :internal, :reply_close}]}
 
       {:cont, data, hdr, cks} ->
@@ -287,7 +292,7 @@ defmodule MeshxRpc.Client.Worker do
             {:keep_state, %Data{data | result: result, state: :recv_fin, metrics: met}, [{:next_event, :internal, :wait_for_cks}]}
 
           {:error, err} ->
-            {:next_state, :reply, %Data{data | result: {:error, err}} |> Data.set_time(:recv),
+            {:next_state, :reply, %Data{data | result: {@error_prefix, err}} |> Data.set_time(:recv),
              [{:next_event, :internal, :reply_terminate}]}
         end
     end
@@ -302,14 +307,14 @@ defmodule MeshxRpc.Client.Worker do
         do: {:keep_state, data, [{:next_event, :internal, :wait_for_cks}]},
         else: {:keep_state, data}
     else
-      {:next_state, :reply, %Data{data | state: :recv, result: {:error, :invalid_state}} |> Data.set_time(:recv),
+      {:next_state, :reply, %Data{data | state: :recv, result: {@error_prefix, :invalid_state}} |> Data.set_time(:recv),
        [{:next_event, :internal, :reply_close}]}
     end
   end
 
   def recv(:info, {:cks_check, :invalid}, %Data{} = data) do
     act = if is_nil(data.cks_mfa), do: {:next_event, :internal, :reply_close}, else: {:next_event, :internal, :reply_terminate}
-    {:next_state, :reply, %Data{data | state: :recv, result: {:error, :invalid_cks}} |> Data.set_time(:recv), [act]}
+    {:next_state, :reply, %Data{data | state: :recv, result: {@error_prefix, :invalid_cks}} |> Data.set_time(:recv), [act]}
   end
 
   def recv(:internal, :wait_for_cks, %Data{} = data) do
@@ -322,17 +327,17 @@ defmodule MeshxRpc.Client.Worker do
 
   def recv(:state_timeout, :timeout_cks, %Data{} = data) do
     act = if is_nil(data.cks_mfa), do: {:next_event, :internal, :reply_close}, else: {:next_event, :internal, :reply_terminate}
-    {:next_state, :reply, %Data{data | state: :recv, result: {:error, :timeout_cks}} |> Data.set_time(:recv), [act]}
+    {:next_state, :reply, %Data{data | state: :recv, result: {@error_prefix, :timeout_cks}} |> Data.set_time(:recv), [act]}
   end
 
   def recv(:info, {:tcp_closed, _socket}, %Data{} = data) do
     act = if is_nil(data.cks_mfa), do: {:next_event, :internal, :reply_close}, else: {:next_event, :internal, :reply_terminate}
-    {:next_state, :reply, %Data{data | state: :recv, result: {:error, :tcp_closed}} |> Data.set_time(:recv), [act]}
+    {:next_state, :reply, %Data{data | state: :recv, result: {@error_prefix, :tcp_closed}} |> Data.set_time(:recv), [act]}
   end
 
   def recv(:info, {:tcp_error, _socket, reason}, %Data{} = data) do
     act = if is_nil(data.cks_mfa), do: {:next_event, :internal, :reply_close}, else: {:next_event, :internal, :reply_terminate}
-    {:next_state, :reply, %Data{data | state: :recv, result: {:error, reason}} |> Data.set_time(:recv), [act]}
+    {:next_state, :reply, %Data{data | state: :recv, result: {@error_prefix, reason}} |> Data.set_time(:recv), [act]}
   end
 
   # ________reply

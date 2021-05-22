@@ -3,6 +3,8 @@ defmodule MeshxRpc.Protocol.Hsk do
   require Logger
   alias MeshxRpc.Common.Structs.{Data, Svc}
 
+  @error_prefix_remote :error_rpc_remote
+
   @proto_ver 1
   @flag_hsk_req 210
   @flag_hsk_ack 215
@@ -47,7 +49,7 @@ defmodule MeshxRpc.Protocol.Hsk do
 
   def decode(<<flag::integer-unsigned-size(8), payload::binary>>, %Data{} = _data) when flag == @flag_hsk_err do
     err = payload |> to_string() |> String.slice(0..255)
-    {:error_remote, err}
+    {@error_prefix_remote, err}
   end
 
   defp encode_header(hsk, %Data{} = data) do

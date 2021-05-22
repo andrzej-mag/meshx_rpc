@@ -3,6 +3,9 @@ defmodule MeshxRpc.Common.Telemetry do
   alias MeshxRpc.Common.Structs.Data
   require Logger
 
+  @error_prefix :error_rpc
+  @error_prefix_remote :error_rpc_remote
+
   def attach([_n, i] = telemetry_prefix, id \\ nil) do
     id = if is_nil(id), do: i, else: id
 
@@ -74,8 +77,8 @@ defmodule MeshxRpc.Common.Telemetry do
 
     level =
       case result do
-        {:error, _e} -> :error
-        {:error_remote, _e} -> :error
+        {@error_prefix, _e} -> :error
+        {@error_prefix_remote, _e} -> :error
         _ -> :debug
       end
 
