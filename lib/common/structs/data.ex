@@ -24,7 +24,7 @@ defmodule MeshxRpc.Common.Structs.Data do
     :req_seq,
     :retry_hsk_fail,
     :retry_proxy_fail,
-    :retry_error,
+    :retry_idle_error,
     :serialize_mfa,
     :shared_key,
     :socket,
@@ -89,15 +89,6 @@ defmodule MeshxRpc.Common.Structs.Data do
         workers: []
     }
   end
-
-  def rand_retry(retry_time, rand_perc \\ 10)
-
-  def rand_retry(retry_time, rand_perc) when is_integer(retry_time) and is_integer(rand_perc) do
-    rand_perc = if rand_perc > 100, do: 100, else: rand_perc
-    (retry_time + retry_time * (:rand.uniform(2 * rand_perc * 10) - rand_perc * 10) / 1000) |> round()
-  end
-
-  def rand_retry(retry_time, _rand_perc) when retry_time == :infinity, do: :infinity
 
   def set_time(%__MODULE__{} = data, time_to_set, time_to_start \\ nil) do
     now = System.monotonic_time(@time_unit)
