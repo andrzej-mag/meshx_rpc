@@ -50,10 +50,10 @@ defmodule MeshxRpc.Protocol.Default do
 
   If successful function returns serialized binary as `result` and `serialization_flag`.
 
-  If user provided `term` is of binary type, serialization step is skipped and `serialization_flag = 0`.
+  If user provided `term` is of binary type, serialization step is skipped and `serialization_flag` is set to `0`.
   Otherwise `:erlang.term_to_binary(term, opts)` is called and `serialization_flag` is set to `1`.
 
-  Function argument `opts` is passed as options to `:erlang.term_to_binary/2`. Options can be used to force binary data compression, which by default is disabled.
+  Function argument `opts` is passed as options to `:erlang.term_to_binary/2`. Serialization options can be used to force binary data compression, which by default is disabled.
 
   ```elixir
   iex(1)> {:ok, bin, ser_flag} = MeshxRpc.Protocol.Default.serialize(%{test_k: "test_v"}, [])
@@ -87,7 +87,7 @@ defmodule MeshxRpc.Protocol.Default do
 
   Function performs reverse operation to `serialize/2`. If `serialization_flag` is `0` de-serialization step is skipped and function returns `{:ok, bin}`. Otherwise `bin` is de-serialized using `:erlang.binary_to_term/2`.
 
-  `opts` argument is passed to `:erlang.binary_to_term/2`. `serialize/2` provides usage example.
+  `opts` is passed as second argument to `:erlang.binary_to_term/2`. `serialize/2` provides usage example.
   """
   @spec deserialize(bin :: binary(), opts :: Keyword.t(), serialization_flag :: 0..255) ::
           {:ok, result :: term()} | {:error, reason :: term}

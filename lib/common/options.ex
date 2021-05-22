@@ -6,7 +6,7 @@ defmodule MeshxRpc.Common.Options do
         type: :keyword_list,
         default: [],
         doc: """
-        Pool options for RPC client and server pools.
+        worker pool options for RPC client and server.
         Server pool is build using [`ranch` socket acceptor pool](https://hex.pm/packages/ranch). `pool_opts` correspond in this case to `ranch` [transport options](https://ninenines.eu/docs/en/ranch/2.0/manual/ranch/).
         Client pool is build using [`poolboy`](https://hex.pm/packages/poolboy), `pool_opts` correspond here directly to [`poolboy` options](https://github.com/devinus/poolboy#options). Users usually should not set any `pool_opts` for server pools. Options that can be set for RPC client pools:
             * `:size` - maximum pool size, default 10,
@@ -71,7 +71,7 @@ defmodule MeshxRpc.Common.Options do
         type: :boolean,
         default: false,
         doc: """
-        When connection is established between RPC server and client first step is a two-way handshake. If handshake fails remote node can be notified about failure or failure can be silently discarded.
+        when connection is established between RPC server and client first step is a two-way handshake. If handshake fails remote node can be notified about failure or failure can be silently discarded.
         """
       ],
       serialize_mfa: [
@@ -85,14 +85,14 @@ defmodule MeshxRpc.Common.Options do
         type: :string,
         default: "",
         doc: """
-        Shared key must be same for connecting server and client. Can be used to specify for example API version: `shared_key: "api_ver_01"`.
+        shared key must be same for connecting server and client. Can be used to specify for example API version: `shared_key: "api_ver_01"`.
         """
       ],
       socket_opts: [
         type: :keyword_list,
         default: [],
         doc: """
-        Connection socket options. Check `:inet.setopts/2` for available settings.
+        connection socket options. Check `:inet.setopts/2` for available settings.
         """
       ],
       svc_ref_mfa: [
@@ -104,28 +104,28 @@ defmodule MeshxRpc.Common.Options do
       telemetry_prefix: [
         type: {:list, :atom},
         doc: """
-        Specifies prefix used when executing telemetry events, e.g. `[:my_app, MyApp.Rpc.Server1]`. If not defined package name and service module will be used: `[:meshx_rpc, MyApp.Rpc.Server1]`.
+        specifies prefix used when executing telemetry events. If not defined package name and service module will be used, e.g.: `[:meshx_rpc, MyApp.Rpc.Server1]`.
         """
       ],
       timeout_hsk: [
         type: :timeout,
         default: 5_000,
         doc: """
-        Handshake timeout.
+        handshake timeout.
         """
       ],
       timeout_cks: [
         type: :timeout,
         default: 500,
         doc: """
-        Timeout for function calculating block checksums specified by `:cks_mfa`.
+        timeout for function calculating block checksums specified by `:cks_mfa`.
         """
       ],
       gen_statem_opts: [
         type: :keyword_list,
         default: [],
         doc: """
-        Option passed as third argument to `:gen_statem.start_link/3` when starting RPC server or client pool worker.
+        option passed as third argument to `:gen_statem.start_link/3` when starting RPC server or client pool worker.
         """
       ]
     ]

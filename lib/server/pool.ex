@@ -8,7 +8,7 @@ defmodule MeshxRpc.Server.Pool do
       type: :timeout,
       default: :infinity,
       doc: """
-      Request function execution timeout. If timeout is exceeded request function is killed and remote RPC client call will error with: `{:error_remote, :killed}`.
+      request function execution timeout, milliseconds. If timeout is exceeded request function is killed and remote RPC client call will error with: `{:error_rpc, :killed}`.
       """
     ]
   ]
@@ -19,9 +19,9 @@ defmodule MeshxRpc.Server.Pool do
   RPC server workers pool.
 
   ## Configuration
-  RPC server pool is configured when starting child defined by `child_spec/2`. Configuration options common to both RPC client and server are described in `MeshxRpc` **Common configuration** section.
+  RPC server pool is configured with `opts` argument in `child_spec/2` function. Configuration options common to both RPC client and server are described in `MeshxRpc` "Common configuration" section.
 
-  `MeshxRpc.Server.Pool.child_spec/2` configuration options:
+  Configuration options specific to RPC server `opts` argument in `child_spec/2`:
   #{NimbleOptions.docs(@opts)}
   """
 
@@ -30,7 +30,7 @@ defmodule MeshxRpc.Server.Pool do
 
   `id` is a pool id which should be a name of a module implementing user RPC functions.
 
-  `opts` are options described in **Configuration** section above and in `MeshxRpc` **Common configuration** section.
+  `opts` are options described in "Configuration" section above and in `MeshxRpc` "Common configuration" section.
   ```elixir
   iex(1)> MeshxRpc.Server.Pool.child_spec(Example1.Server, address: {:uds, "/tmp/meshx.sock"})
   %{

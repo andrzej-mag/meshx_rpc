@@ -2,7 +2,7 @@ defmodule MeshxRpc.Server do
   @moduledoc """
   Convenience module on top of `MeshxRpc.Server.Pool`.
 
-  Module leverages `Kernel.use/2` to simplify user interaction with `MeshxRpc.Server.Pool` module:
+  Module leverages `Kernel.use/2` macro to simplify user interaction with `MeshxRpc.Server.Pool` module:
     * current module name is used as pool id,
     * pool options can be specified with `use/2` clause.
 
