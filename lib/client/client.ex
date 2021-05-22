@@ -2,7 +2,7 @@ defmodule MeshxRpc.Client do
   @moduledoc """
   Convenience module on top of `MeshxRpc.Client.Pool`.
 
-  Module leverages `Kernel.use/2` to simplify user interaction with `MeshxRpc.Client.Pool` module:
+  Module leverages `Kernel.use/2` macro to simplify user interaction with `MeshxRpc.Client.Pool` module:
     * current module name is used as pool id,
     * pool options can be specified with `use/2` clause.
 
@@ -54,13 +54,18 @@ defmodule MeshxRpc.Client do
         @pool_mod.child_spec(__MODULE__, opts)
       end
 
-      def cast(fun, args \\ [], timeout \\ :infinity), do: @pool_mod.cast(__MODULE__, fun, args, timeout)
-      def call(fun, args \\ [], timeout \\ :infinity), do: @pool_mod.call(__MODULE__, fun, args, timeout)
-      def call!(fun, args \\ [], timeout \\ :infinity), do: @pool_mod.call!(__MODULE__, fun, args, timeout)
+      def cast(request, args \\ [], timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100),
+        do: @pool_mod.cast(__MODULE__, request, args, timeout, retry, retry_sleep)
+
+      def call(request, args \\ [], timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100),
+        do: @pool_mod.call(__MODULE__, request, args, timeout, retry, retry_sleep)
+
+      def call!(request, args \\ [], timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100),
+        do: @pool_mod.call!(__MODULE__, request, args, timeout, retry, retry_sleep)
     end
   end
 
-  @optional_callbacks child_spec: 1, cast: 3, call: 3, call!: 3
+  @optional_callbacks child_spec: 1, cast: 5, call: 5, call!: 5
 
   @doc """
   Returns a specification to start a RPC client workers pool under a supervisor.
@@ -68,18 +73,38 @@ defmodule MeshxRpc.Client do
   @callback child_spec(opts :: Keyword.t()) :: Supervisor.child_spec()
 
   @doc """
-  Executes RPC `fun` asynchronous cast with `args` arguments.
+  Sends an asynchronous RPC cast `request` to the server.
   """
-  @callback cast(fun :: atom(), args :: list(), timeout :: timeout) :: :ok
+  @callback cast(
+              request :: atom(),
+              args :: list(),
+              timeout :: timeout(),
+              retry :: pos_integer(),
+              retry_sleep :: non_neg_integer()
+            ) ::
+              :ok
 
   @doc """
-  Executes `fun` synchronous call with `args` arguments.
+  Makes a synchronous RPC call `request` to the server and waits for its reply.
   """
-  @callback call(fun :: atom(), args :: list(), timeout :: timeout) ::
-              term() | {:error_remote, reason :: term()} | :full
+  @callback call(
+              request :: atom(),
+              args :: list(),
+              timeout :: timeout(),
+              retry :: pos_integer(),
+              retry_sleep :: non_neg_integer()
+            ) ::
+              term() | {:error_rpc, reason :: term()}
+
   @doc """
-  Same as `c:call/3`, will reraise remote server function execution exception locally.
+  Same as `c:call/5`, will reraise remote exception locally.
   """
-  @callback call!(fun :: atom(), args :: list(), timeout :: timeout) ::
-              term() | {:error_remote, reason :: term()} | :full
+  @callback call!(
+              request :: atom(),
+              args :: list(),
+              timeout :: timeout(),
+              retry :: pos_integer(),
+              retry_sleep :: non_neg_integer()
+            ) ::
+              term() | {:error_rpc, reason :: term()}
 end

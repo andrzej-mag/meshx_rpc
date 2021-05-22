@@ -1,41 +1,54 @@
 defmodule MeshxRpc.Client.Pool do
   require Logger
+  alias MeshxRpc.App.{C, T}
   alias MeshxRpc.Common.{Options, Structs.Data}
+
+  @error_prefix :error_rpc
+  @error_prefix_remote :error_rpc_remote
+
+  @request_retries_statem 5
 
   @opts [
     idle_reconnect: [
       type: :timeout,
       default: 600_000,
       doc: """
-      After RPC client-server connection is established or after RPC request processing client worker enters `idle` state waiting for the next user request. `:idle_reconnect` specifies amount of idle time after which client should reestablish connection. One can think about this feature as high level TCP keep-alive/heartbeat action.
+      after RPC client-server connection is established or after RPC request processing, client worker enters `idle` state waiting for the next user request. `:idle_reconnect` specifies amount of idle time after which client should reestablish connection. One can think about this feature as high level TCP keep-alive/heartbeat action.
       """
     ],
-    retry_error: [
+    retry_idle_error: [
       type: :pos_integer,
       default: 1_000,
       doc: """
-      Amount of time RPC client worker should wait before reconnecting after connection failure when in idle state.
+      amount of time RPC client worker should wait before reconnecting after connection failure when in idle state.
       """
     ],
     retry_hsk_fail: [
       type: :pos_integer,
       default: 5_000,
       doc: """
-      Amount of time RPC client worker should wait before reconnecting after handshake failure. Most common handshake failure reason probably will be inconsistent client/server configuration, for example different `:shared_key` option on client and server.
+      amount of time RPC client worker should wait before reconnecting after handshake failure. Most common handshake failure reason probably will be inconsistent client/server configuration, for example different `:shared_key` option on client and server.
       """
     ],
     retry_proxy_fail: [
       type: :pos_integer,
       default: 1_000,
       doc: """
-      Amount of time RPC client worker should wait before retrying reconnect to `:address` after initial socket connection failure. If `:address` points to mesh upstream endpoint proxy address, failures here can be associated with proxy binary problem.
+      amount of time RPC client worker should wait before retrying reconnect to `:address` after initial socket connection failure. If `:address` points to mesh upstream endpoint proxy address, failures here can be associated with proxy binary problem.
       """
     ],
     timeout_connect: [
       type: :timeout,
       default: 5_000,
       doc: """
-      Timeout used when establishing initial TCP socket connection with RPC server.
+      timeout used when establishing initial TCP socket connection with RPC server.
+      """
+    ],
+    exec_retry_on_error: [
+      type: {:list, :atom},
+      default: [:closed, :tcp_closed],
+      doc: """
+      list of request processing errors on which request execution should be retried.
       """
     ]
   ]
@@ -43,9 +56,9 @@ defmodule MeshxRpc.Client.Pool do
   RPC client workers pool.
 
   ## Configuration
-  RPC client pool is configured when starting child defined by `child_spec/2`. Configuration options common to both RPC client and server are described in `MeshxRpc` **Common configuration** section.
+  RPC client pool is configured with `opts` argument in `child_spec/2` function. Configuration options common to both RPC client and server are described in `MeshxRpc` "Common configuration" section.
 
-  `MeshxRpc.Client.Pool.child_spec/2` configuration options:
+  Configuration options specific to RPC client `opts` argument in `child_spec/2`:
   #{NimbleOptions.docs(@opts)}
 
   Values for options prefixed with `:retry-` and `:idle_reconnect` are randomized by `+/-10%`. Unit for time related options is millisecond.
@@ -58,7 +71,9 @@ defmodule MeshxRpc.Client.Pool do
 
   `id` is a pool id which might be a name of a module implementing user RPC functions.
 
-  `opts` are options described in **Configuration** section above and in `MeshxRpc` **Common configuration** section.
+  `opts` are options described in "Configuration" section above and in `MeshxRpc` "Common configuration" section.
+
+  Example:
   ```elixir
   iex(1)> MeshxRpc.Client.Pool.child_spec(Example1.Client, address: {:uds, "/tmp/meshx.sock"})
   {Example1.Client,
@@ -86,7 +101,7 @@ defmodule MeshxRpc.Client.Pool do
     data =
       Data.init(id, opts)
       |> Map.put(:idle_reconnect, Keyword.fetch!(opts, :idle_reconnect))
-      |> Map.put(:retry_error, Keyword.fetch!(opts, :retry_error))
+      |> Map.put(:retry_idle_error, Keyword.fetch!(opts, :retry_idle_error))
       |> Map.put(:retry_hsk_fail, Keyword.fetch!(opts, :retry_hsk_fail))
       |> Map.put(:retry_proxy_fail, Keyword.fetch!(opts, :retry_proxy_fail))
       |> Map.put(:timeout_connect, Keyword.fetch!(opts, :timeout_connect))
@@ -96,6 +111,9 @@ defmodule MeshxRpc.Client.Pool do
     conn_ref_mfa = Keyword.fetch!(opts, :conn_ref_mfa)
     gen_statem_opts = Keyword.fetch!(opts, :gen_statem_opts)
 
+    retry_on_error = Keyword.fetch!(opts, :exec_retry_on_error)
+    :persistent_term.put({C.lib(), :retry_on_error}, retry_on_error)
+
     {id, start, restart, shutdown, type, modules} =
       :poolboy.child_spec(id, pool_opts, [{data, node_ref_mfa, svc_ref_mfa, conn_ref_mfa}, gen_statem_opts])
 
@@ -103,109 +121,126 @@ defmodule MeshxRpc.Client.Pool do
   end
 
   @doc """
-  Executes on client `pool` RPC `fun` asynchronous cast with `args` arguments.
+  Sends an asynchronous RPC cast `request` using workers `pool`.
 
-  Function always immediately returns `:ok`, even if `pool` or `fun` do not exist or all pool workers are busy.
+  Function always immediately returns `:ok`, even if `pool` doesn't exist or any other error takes place.
 
-  `MeshxRpc` workers are pool checked persistent TCP connections. When user runs new `cast` request, first step is to asynchronously checkout new worker from pool manager and then make request using that worker. Client worker due to non-multiplexed connection persistence must wait for server counterpart to acknowledge request execution completion. If acknowledgment is not received in specified by `timeout` time, asynchronous process executing request is killed and given connection to server is closed. User doesn't receive any notifications about timeout error.
+  `args`, `timeout`, `retry` and `retry_sleep` function arguments have the same meaning as in case of `call/6`.
+
+  Example:
   ```elixir
   iex(1)> MeshxRpc.Client.Pool.cast(NotExisting, :undefined, [])
   :ok
   ```
   """
-  @spec cast(pool :: atom(), fun :: atom(), args :: list(), timeout :: timeout) :: :ok
-  def cast(pool, fun, args, timeout \\ :infinity) when is_integer(timeout) or timeout == :infinity do
-    spawn(fn ->
-      pid = :poolboy.checkout(pool, false)
-
-      if is_pid(pid) do
-        ref =
-          if timeout == :infinity do
-            nil
-          else
-            {:ok, ref} = :timer.kill_after(timeout, pid)
-            ref
-          end
-
-        :gen_statem.call(pid, {:request, {:cast, fun, args}})
-        if !is_nil(ref), do: {:ok, :cancel} = :timer.cancel(ref)
-        :poolboy.checkin(pool, pid)
-        :ok
-      else
-        Logger.warn("Function #{fun} not casted.")
-      end
-    end)
-
+  @spec cast(
+          pool :: atom(),
+          request :: atom(),
+          args :: list(),
+          timeout :: timeout,
+          retry :: pos_integer(),
+          retry_sleep :: non_neg_integer()
+        ) :: :ok
+  def cast(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
+    spawn(__MODULE__, :retry_request, [pool, request, args, timeout, retry, retry_sleep])
     :ok
   end
 
   @doc """
-  Executes on client `pool` RPC `fun` synchronous call with `args` arguments.
+  Makes a synchronous RPC call `request` using workers `pool` and waits for reply.
 
-  If successful `call/4` returns result of remote function evaluation with `Kernel.apply/3`.
+  If successful, `call/6` returns `Kernel.apply(RpcServerMod, request, args)` evaluation result on remote server.
 
-  If pool manager cannot checkout new worker to process user request it returns `:full`.
+  If error occurs during request processing `{:error_rpc, reason}` is returned.
 
-  If failure occurs on server side function returns `{:error_remote, reason}`.
+  User defined RPC server functions should not return results as tuples with first tuple element being `:error_rpc` or any atom name starting with `:error_rpc` (for example `:error_rpc_remote`) as those tuples are reserved by `MeshxRpc` internally for error reporting and processing.
 
-  If user provided checksum function (`:cks_mfa` option) check fails, function will return: `{:error_remote, :invalid_cks}` if check failed on server or `{:error, :invalid_cks}` if failure was local. If checksum calculation timeouts: `{:error_remote, :timeout_cks}` or `{:error, :timeout_cks}`.
+  Possible request processing errors:
+  * `:full` - all client pool workers are busy and pool manager cannot checkout new worker,
+  * `:killed` - process executing request on remote server was killed because function execution time exceeded allowed timeout (see `MeshxRpc.Server.Pool` option `:timeout_execute`),
+  * `:invalid_cks` - checksum check with user provided checksum function (`:cks_mfa` option) failed,
+  * `:timeout_cks` - checksum calculation timeout,
+  * `:closed` - client worker received user request before handshake with server was completed,
+  * `:tcp_closed` - TCP socket connection was closed,
+  * `:invalid_ref` - request message failed referential integrity check,
+  * `{:undef, [...]}` - request function not defined on server,
+  * `:invalid_state` - server or client worker encountered inconsistent critical state,
+  * any `:inet` [POSIX Error Codes](http://erlang.org/doc/man/inet.html#posix-error-codes),
+  * any errors from (de)serialization function.
 
-  If request message fails referential integrity check: `{:error_remote, :invalid_ref}` or `{:error, :invalid_ref}`.
+  If remote server does not respond within time specified by `timeout` argument, process executing RPC call is killed, the function call fails and the caller exits. Additionally connection to remote server is closed which kills corresponding RPC call process being executed on the server. Please be aware of `MeshxRpc.Server.Pool` `:timeout_execute` configuration option playing similar role to `timeout` function argument on the server side.
 
-  If server or client connection worker encounters inconsistent critical state: `{:error_remote, :invalid_state}` or `{:error, :invalid_state}` respectively.
+  If error occurs during request processing and error reason is in list defined by `:exec_retry_on_error` configuration option, request will be retried `retry` times with randomized exponential back-off starting with `retry_sleep` msec.
 
-  Additionally errors from (de-)serialization functions will be reported.
-
-  If remote server does not respond within time specified by `timeout`, process executing RPC call is killed, the function call fails and the caller exits. Additionally connection to remote server is closed which kills corresponding RPC call process being executed on server. Please be aware of `MeshxRpc.Server.Pool` `:timeout_execute` configuration option playing similar role on the server side.
-
+  Example:
   ```elixir
   iex(1)> MeshxRpc.Client.Pool.call(Example1.Client, :echo, "hello world")
   "hello world"
   iex(2)> MeshxRpc.Client.Pool.call(Example1.Client, :not_existing, "hello world")
-  {:error_remote,
-   {:undef,
-    [
-      {Example1.Server, :not_existing, ["hello world"], []},
-      {MeshxRpc.Server.Worker, :"-exec/3-fun-1-", 2,
-       [file: 'lib/server/worker.ex', line: 188]}
-    ]}}
+  {:error_rpc, {:undef,  [...]}}
   """
-  @spec call(pool :: atom(), fun :: atom(), args :: list(), timeout :: timeout) ::
-          term() | {:error_remote, reason :: term()} | :full
-  def call(pool, fun, args, timeout \\ :infinity) when is_integer(timeout) or timeout == :infinity do
-    case :poolboy.checkout(pool, false) do
-      pid when is_pid(pid) ->
-        ref =
-          if timeout == :infinity do
-            nil
-          else
-            {:ok, ref} = :timer.kill_after(timeout, pid)
-            ref
-          end
+  @spec call(
+          pool :: atom(),
+          request :: atom(),
+          args :: list(),
+          timeout :: timeout,
+          retry :: pos_integer(),
+          retry_sleep :: non_neg_integer()
+        ) ::
+          term() | {:error_rpc, reason :: term()}
+  def call(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
+    case retry_request(pool, request, args, timeout, retry, retry_sleep) do
+      {@error_prefix_remote, e} -> {@error_prefix, e}
+      r -> r
+    end
+  end
 
-        result = :gen_statem.call(pid, {:request, {:call, fun, args}})
-        if !is_nil(ref), do: {:ok, :cancel} = :timer.cancel(ref)
-        :poolboy.checkin(pool, pid)
-        result
+  @doc """
+  Same as `call/6`, will reraise remote exception locally.
+
+  Example:
+  ```elixir
+  iex(1)> MeshxRpc.Client.Pool.call(Example1.Client, :raise_test, "raise kaboom!")
+  {:error_rpc, %RuntimeError{message: "raise kaboom!"}}
+  iex(2)> MeshxRpc.Client.Pool.call!(Example1.Client, :raise_test, "raise kaboom!")
+  ** (RuntimeError) raise kaboom!
+  ```
+  """
+  @spec call!(
+          pool :: atom(),
+          request :: atom(),
+          args :: list(),
+          timeout :: timeout,
+          retry :: pos_integer(),
+          retry_sleep :: non_neg_integer()
+        ) ::
+          term() | {:error_rpc, reason :: term()}
+  def call!(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
+    case retry_request(pool, request, args, timeout, retry, retry_sleep) do
+      {@error_prefix_remote, e} when is_exception(e) -> raise(e)
+      {@error_prefix_remote, e} -> {@error_prefix, e}
+      r -> r
+    end
+  end
+
+  defp retry_request(pool, request, args, timeout, retry, retry_sleep, retries \\ 0) do
+    case request(pool, request, args, timeout) do
+      {err, e} when err in [@error_prefix, @error_prefix_remote] ->
+        retry_on_error = :persistent_term.get({MeshxRpc.App.C.lib(), :retry_on_error})
+
+        if e in retry_on_error and retries < retry do
+          retry_sleep |> T.rand_retry() |> Process.sleep()
+          retry_request(pool, request, args, timeout, retry, retry_sleep * 2, retries + 1)
+        else
+          {err, e}
+        end
 
       r ->
         r
     end
   end
 
-  @doc """
-  Same as `call/4`, will reraise remote server function execution exception locally.
-  ```elixir
-  iex(1)> MeshxRpc.Client.Pool.call(Example1.Client, :raise_test, "raise boom!")
-  {:error_remote, %RuntimeError{message: "raise boom!"}}
-  iex(2)> MeshxRpc.Client.Pool.call!(Example1.Client, :raise_test, "raise boom!")
-  ** (RuntimeError) raise boom!
-      (meshx_rpc 0.1.0-dev) lib/client/pool.ex:121: MeshxRpc.Client.Pool.call!/4
-  ```
-  """
-  @spec call!(pool :: atom(), fun :: atom(), args :: list(), timeout :: timeout) ::
-          term() | {:error_remote, reason :: term()} | :full
-  def call!(pool, fun, args, timeout \\ :infinity) when is_integer(timeout) or timeout == :infinity do
+  defp request(pool, request, args, timeout, retries_statem \\ 0) do
     case :poolboy.checkout(pool, false) do
       pid when is_pid(pid) ->
         ref =
@@ -216,17 +251,24 @@ defmodule MeshxRpc.Client.Pool do
             ref
           end
 
-        result = :gen_statem.call(pid, {:request, {:call, fun, args}})
+        result =
+          try do
+            :gen_statem.call(pid, {:request, {:call, request, args}})
+          catch
+            :exit, e ->
+              if retries_statem < @request_retries_statem,
+                do: request(pool, request, args, timeout, retries_statem + 1),
+                else: exit(e)
+          else
+            r -> r
+          end
+
         if !is_nil(ref), do: {:ok, :cancel} = :timer.cancel(ref)
         :poolboy.checkin(pool, pid)
+        result
 
-        case result do
-          {:error_remote, e} when is_exception(e) -> raise(e)
-          r -> r
-        end
-
-      r ->
-        r
+      :full ->
+        {@error_prefix, :full}
     end
   end
 end
