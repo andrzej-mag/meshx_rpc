@@ -210,6 +210,10 @@ defmodule MeshxRpc.Client.Worker do
             else: {:keep_state, %Data{data | dta: tail}, [{:state_timeout, data.timeout_cks, :timeout_cks}]}
         end
 
+      {:error, :closed} ->
+        {:keep_state, %Data{data | result: {@error_prefix, :closed}},
+         [{:state_timeout, data.timeout_connect, :timeout_receive_err}]}
+
       {:error, reason} ->
         data = %Data{data | result: {@error_prefix, reason}} |> Data.set_time(:send)
         {:next_state, :closed, data, [{:next_event, :internal, :connect}]}
@@ -224,6 +228,11 @@ defmodule MeshxRpc.Client.Worker do
       {:next_state, :closed, data, [{:next_event, :internal, :connect}]}
     end
   end
+
+  def send(:state_timeout, :timeout_receive_err, %Data{} = data),
+    do:
+      {:next_state, :reply, %Data{data | result: {@error_prefix, :tcp_closed}} |> Data.set_time(:send),
+       [{:next_event, :internal, :reply_close}]}
 
   def send(:state_timeout, :timeout_cks, %Data{} = data),
     do:
