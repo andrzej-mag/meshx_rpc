@@ -30,9 +30,9 @@ Add `:meshx_rpc` and optionally `:meshx_consul`, `:ranch` and `:poolboy` to appl
 # mix.exs
 def deps do
   [
-    {:meshx_rpc, "~> 0.1.0-dev", github: "andrzej-mag/meshx_rpc"},
+    {:meshx_rpc, "~> 0.1.0"},
     # if using :meshx_consul service mesh adapter add:
-    {:meshx_consul, "~> 0.1.0-dev", github: "andrzej-mag/meshx_consul"},
+    {:meshx_consul, "~> 0.1.0"},
     # if running RPC client(s) add:
     {:poolboy, "~> 1.5"},
     # if running RPC server(s) add:
