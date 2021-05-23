@@ -142,7 +142,7 @@ defmodule MeshxRpc.Client.Pool do
           retry_sleep :: non_neg_integer()
         ) :: :ok
   def cast(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
-    spawn(__MODULE__, :retry_request, [pool, request, args, timeout, retry, retry_sleep])
+    spawn(__MODULE__, :retry_request, [pool, :cast, request, args, timeout, retry, retry_sleep])
     :ok
   end
 
@@ -189,7 +189,7 @@ defmodule MeshxRpc.Client.Pool do
         ) ::
           term() | {:error_rpc, reason :: term()}
   def call(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
-    case retry_request(pool, request, args, timeout, retry, retry_sleep) do
+    case retry_request(pool, :call, request, args, timeout, retry, retry_sleep) do
       {@error_prefix_remote, e} -> {@error_prefix, e}
       r -> r
     end
@@ -216,21 +216,21 @@ defmodule MeshxRpc.Client.Pool do
         ) ::
           term() | {:error_rpc, reason :: term()}
   def call!(pool, request, args, timeout \\ :infinity, retry \\ 5, retry_sleep \\ 100) do
-    case retry_request(pool, request, args, timeout, retry, retry_sleep) do
+    case retry_request(pool, :call, request, args, timeout, retry, retry_sleep) do
       {@error_prefix_remote, e} when is_exception(e) -> raise(e)
       {@error_prefix_remote, e} -> {@error_prefix, e}
       r -> r
     end
   end
 
-  defp retry_request(pool, request, args, timeout, retry, retry_sleep, retries \\ 0) do
-    case request(pool, request, args, timeout) do
+  def retry_request(pool, req_type, request, args, timeout, retry, retry_sleep, retries \\ 0) when req_type in [:cast, :call] do
+    case request(pool, req_type, request, args, timeout) do
       {err, e} when err in [@error_prefix, @error_prefix_remote] ->
         retry_on_error = :persistent_term.get({MeshxRpc.App.C.lib(), :retry_on_error})
 
         if e in retry_on_error and retries < retry do
           retry_sleep |> T.rand_retry() |> Process.sleep()
-          retry_request(pool, request, args, timeout, retry, retry_sleep * 2, retries + 1)
+          retry_request(pool, req_type, request, args, timeout, retry, retry_sleep * 2, retries + 1)
         else
           {err, e}
         end
@@ -240,7 +240,7 @@ defmodule MeshxRpc.Client.Pool do
     end
   end
 
-  defp request(pool, request, args, timeout, retries_statem \\ 0) do
+  defp request(pool, req_type, request, args, timeout, retries_statem \\ 0) do
     case :poolboy.checkout(pool, false) do
       pid when is_pid(pid) ->
         ref =
@@ -253,7 +253,7 @@ defmodule MeshxRpc.Client.Pool do
 
         result =
           try do
-            :gen_statem.call(pid, {:request, {:call, request, args}})
+            :gen_statem.call(pid, {:request, {req_type, request, args}})
           catch
             :exit, e ->
               if retries_statem < @request_retries_statem,
