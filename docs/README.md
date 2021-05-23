@@ -43,8 +43,8 @@ end
 Same `mix` project is used to implement both RPC server and RPC client to simplify examples.
 
 Server and client nodes are started using custom command line argument `rpc_server?`:
-  * server: `iex --erl "-rpc_server? true"`,
-  * client: `iex --erl "-rpc_server? false"`,
+  * start server: `iex --erl "-rpc_server? true"`,
+  * start client: `iex --erl "-rpc_server? false"`.
 
 ### Example 1. Shared Unix Domain Socket.
 Implement RPC server `Example1.Server` and client `Example1.Client` modules:
@@ -72,7 +72,7 @@ end
 Both client and server connect to the same UDS socket at `"/tmp/meshx.sock"`.
 For RPC client number of pool workers is limited to one, to reduce amount of telemetry events logged to terminal.
 
-RPC client and server are started using application supervision tree by using respective child specifications `Example1.Client.child_spec()` and `Example1.Server.child_spec()`:
+RPC client and server are started using application supervision tree by using their respective child specifications `Example1.Client.child_spec()` and `Example1.Server.child_spec()`:
 ```elixir
 # lib/example1/application.ex
 defmodule Example1.Application do
@@ -218,9 +218,18 @@ end
 ```
 Commands to start server and client nodes are same as in [Example 1](#module-example-1-shared-unix-domain-socket).
 
-When RPC server node is started mesh service endpoint `address` is prepared by `MeshxConsul.start("service-1")`. Special "node service" is registered with Consul, default service name would be in this case `"service-1"`. Next `DynamicSupervisor` starts child specified with `Example2.Server.child_spec/1`. Started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be managed using Consul service mesh control plane.
+When RPC server node is started mesh service endpoint `address` is prepared by running `MeshxConsul.start("service-1")` function:
+  * mesh service `"service-1"` is registered with Consul service registry,
+  * required by service `"service-1"` workers are stared, including sidecar proxy connecting `"service-1"` with Consul managed mesh data plane.
 
-When RPC client node is started mesh upstream endpoint `address` is prepared by `MeshxConsul.connect("service-1")`. Special "proxy service" is registered with Consul, default service name is prefix `"upstream-"` concatenated with host name. In this example it is `"upstream-h11"`. Next `DynamicSupervisor` starts child specified with `Example2.Client.child_spec/1`. Started child worker is a user defined (RPC) client attached to mesh upstream endpoint `address`, hence it becomes user mesh upstream client attached to service mesh data plane.
+Next `DynamicSupervisor` starts child specified with `Example2.Server.child_spec(address: address)`. Started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be managed using Consul service mesh control plane.
+
+When RPC client node is started mesh upstream endpoint `address` is prepared by `MeshxConsul.connect("service-1")`:
+  * special "proxy service" is registered with Consul, default service name is prefix `"upstream-"` concatenated with host name; in this example it is `"upstream-h11"`,
+  * upstream `"service-1"` is added to sidecar proxy service `"upstream-h11"`,
+  * required by proxy service `"upstream-h11"` workers are stared, including sidecar proxy connecting `"upstream-h11"` with mesh data plane.
+
+Next `DynamicSupervisor` starts child specified with `Example2.Client.child_spec(address: address)`. Started child worker is a user defined (RPC) client attached to mesh upstream endpoint `address`, hence it becomes user mesh upstream client connected to service mesh data plane.
 
 Consul UI screenshot showing connection between `upstream-h11` proxy service and `service-1`:
 ![image](assets/topology.png)

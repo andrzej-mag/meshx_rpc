@@ -5,7 +5,7 @@ defmodule MeshxRpc do
   #{@readme}
 
   ## Common configuration
-  RPC client and server modules provide child specifications which should be used with user supervisors as shown on examples above. RPC client `child_spec` can be created directly by accessing `MeshxRpc.Client.Pool.child_spec/2` or by using wrapper module `MeshxRpc.Client`. Similarly RPC server is available through `MeshxRpc.Server.Pool.child_spec/2` or `MeshxRpc.Server` modules.
+  RPC client and server modules provide child specifications which should be used with user supervisors as shown on examples above. RPC client `child_spec` can be created directly by accessing `MeshxRpc.Client.Pool.child_spec/2` or by using wrapper module `MeshxRpc.Client`. Similarly RPC server `child_spec` is available through `MeshxRpc.Server.Pool.child_spec/2` or `MeshxRpc.Server` modules.
 
   Configuration options common to client and server `child_spec/2` functions:
   #{NimbleOptions.docs(MeshxRpc.Common.Options.common())}
@@ -21,8 +21,6 @@ defmodule MeshxRpc do
     * `:idle` - emitted only by client workers when worker is in idle state waiting for user requests,
     * `:recv` and `:send` - emitted by both client and server workers if there was a problem when receiving or sending request data,
     * `:call` and `:cast` - emitted by client and server during failed or after successful call/cast request processing.
-
-
 
   ### Telemetry metadata
   * `:address` - connection address, e.g. `{:tcp, {127, 0, 0, 1}, 1024}`,
@@ -61,9 +59,6 @@ defmodule MeshxRpc do
     state: :reply
   }
   ```
-
-
-
 
   ### Telemetry metrics
   Three metrics types are reported:
