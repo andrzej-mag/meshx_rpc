@@ -1,4 +1,6 @@
 # MeshxRpc
+[![Hex Version](https://img.shields.io/hexpm/v/meshx_rpc)](https://hex.pm/packages/meshx_rpc)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen)](https://hexdocs.pm/meshx_rpc)
 
 <!-- MDOC !-->
 RPC client and server.
@@ -222,7 +224,9 @@ When RPC server node is started mesh service endpoint `address` is prepared by r
   * mesh service `"service-1"` is registered with Consul service registry,
   * required by service `"service-1"` workers are stared, including sidecar proxy connecting `"service-1"` with Consul managed mesh data plane.
 
-Next `DynamicSupervisor` starts child specified with `Example2.Server.child_spec(address: address)`. Started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be managed using Consul service mesh control plane.
+Next `DynamicSupervisor` starts child specified with `Example2.Server.child_spec(address: address)`. Started child worker is a user defined (RPC) server attached to mesh service endpoint `address`, hence it becomes user mesh service provider that can be:
+  * accessed by remote mesh upstream clients,
+  * managed using Consul service mesh control plane.
 
 When RPC client node is started mesh upstream endpoint `address` is prepared by `MeshxConsul.connect("service-1")`:
   * special "proxy service" is registered with Consul, default service name is prefix `"upstream-"` concatenated with host name; in this example it is `"upstream-h11"`,
@@ -235,5 +239,4 @@ Consul UI screenshot showing connection between `upstream-h11` proxy service and
 ![image](assets/topology.png)
 
 <!-- MDOC !-->
-
-Next section on hexdocs.pm: [Common configuration].
+Next section on hexdocs.pm: [Common configuration](https://hexdocs.pm/meshx_rpc/MeshxRpc.html#module-common-configuration).
