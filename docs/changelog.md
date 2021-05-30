@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 [2021-05-23]
+## 0.1.1 [2021-05-30]
 ### Fixed
   * [mix deps] Downgrade ranch from 2.0 to 1.8.0 to solve compatibility issue with Phoenix 1.5
 
