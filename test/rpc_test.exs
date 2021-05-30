@@ -10,7 +10,8 @@ defmodule RpcTest do
   defmodule Server do
     use MeshxRpc.Server,
       telemetry_prefix: [:test, :server],
-      address: {:uds, "/tmp/meshx_test.sock"}
+      # address: {:uds, "/tmp/meshx_test.sock"}
+      address: {:tcp, {127, 0, 0, 1}, 1999}
 
     def echo(args), do: args
     def raise_test(args), do: raise(args)
@@ -20,7 +21,8 @@ defmodule RpcTest do
   defmodule Client do
     use MeshxRpc.Client,
       telemetry_prefix: [:test, :client],
-      address: {:uds, "/tmp/meshx_test.sock"},
+      # address: {:uds, "/tmp/meshx_test.sock"},
+      address: {:tcp, {127, 0, 0, 1}, 1999},
       pool_opts: [size: 10, max_overflow: 5]
 
     def ecall(args), do: call(:echo, args)

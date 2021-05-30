@@ -25,7 +25,8 @@ defmodule MeshxRpc.MixProject do
       {:ex_doc, "~> 0.24.2", only: :dev, runtime: false},
       {:nimble_options, "~> 0.3.5"},
       {:poolboy, "~> 1.5", [optional: true]},
-      {:ranch, "~> 2.0", [optional: true]},
+      # {:ranch, "~> 2.0", [optional: true]},
+      {:ranch, "~> 1.8.0", [optional: true]},
       {:telemetry, "~> 0.4.2"}
     ]
   end

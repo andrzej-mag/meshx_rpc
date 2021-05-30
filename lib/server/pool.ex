@@ -1,5 +1,5 @@
 defmodule MeshxRpc.Server.Pool do
-  @behaviour :ranch_protocol
+  # @behaviour :ranch_protocol
   alias MeshxRpc.App.T
   alias MeshxRpc.Common.{Options, Structs.Data, Structs.Svc}
 
@@ -65,10 +65,23 @@ defmodule MeshxRpc.Server.Pool do
     {_type, ip, port} = Map.fetch!(data, :address)
     pool_opts = T.merge_improper_keyword([ip: ip, port: port], Keyword.fetch!(opts, :pool_opts))
     gen_statem_opts = Keyword.fetch!(opts, :gen_statem_opts)
-    :ranch.child_spec(id, @transport, pool_opts, __MODULE__, [data, gen_statem_opts])
+
+    case :ranch.child_spec(id, @transport, pool_opts, __MODULE__, [data, gen_statem_opts]) do
+      chi when is_map(chi) ->
+        chi
+
+      {id, start, restart, shutdown, type, modules} ->
+        %{id: id, start: start, restart: restart, shutdown: shutdown, type: type, modules: modules}
+    end
   end
 
-  @impl :ranch_protocol
+  # start_link/3 compatible with :ranch 2.0
+  # @impl :ranch_protocol
   def start_link(_pool_id, _transport, [opts, gen_statem_opts]),
+    do: {:ok, :proc_lib.spawn_link(@worker_mod, :init, [[opts, gen_statem_opts]])}
+
+  # start_link/4 compatible with :ranch 1.8.0
+  # @impl :ranch_protocol
+  def start_link(_pool_id, _socket, _transport, [opts, gen_statem_opts]),
     do: {:ok, :proc_lib.spawn_link(@worker_mod, :init, [[opts, gen_statem_opts]])}
 end

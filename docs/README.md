@@ -35,8 +35,10 @@ def deps do
     {:meshx_consul, "~> 0.1.0"},
     # if running RPC client(s) add:
     {:poolboy, "~> 1.5"},
-    # if running RPC server(s) add:
-    {:ranch, "~> 2.0"}
+    # if running RPC server(s) using ranch 1.8.0 add:
+    {:ranch, "~> 1.8.0"}
+    # if running RPC server(s) using ranch 2.0 add:
+    {:ranch, "~> 2.0", override: true}
   ]
 end
 ```
@@ -49,6 +51,9 @@ Server and client nodes are started using custom command line argument `rpc_serv
   * start client: `iex --erl "-rpc_server? false"`.
 
 ### Example 1. Shared Unix Domain Socket.
+
+> Requires ranch version 2.0.
+
 Implement RPC server `Example1.Server` and client `Example1.Client` modules:
 ```elixir
 # lib/server.ex
